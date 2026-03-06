@@ -14,9 +14,14 @@
 body{background:var(--bg);color:var(--text);font-family:'SF Mono','Consolas','Monaco',monospace;font-size:13px;overflow:hidden;height:100vh}
 a{color:var(--accent);text-decoration:none}
 
-.app{display:grid;grid-template-rows:40px 1fr 32px;height:100vh}
+.app{display:grid;grid-template-rows:40px 36px 1fr 32px;height:100vh}
 .top-bar{display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--border)}
+.tab-bar{display:flex;align-items:center;gap:0;background:var(--panel);border-bottom:1px solid var(--border);padding:0 16px}
+.tab-btn{background:transparent;color:var(--dim);border:none;border-bottom:2px solid transparent;padding:8px 16px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;letter-spacing:0.5px;transition:all .15s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
 .main{display:grid;grid-template-columns:1fr 320px;overflow:hidden}
+.main.backtest-mode{grid-template-columns:1fr}
 .bottom-bar{display:flex;align-items:center;gap:24px;padding:0 16px;background:var(--panel);border-top:1px solid var(--border);font-size:12px}
 
 .logo{font-weight:700;color:var(--green);font-size:14px;letter-spacing:1px}
@@ -58,6 +63,34 @@ a{color:var(--accent);text-decoration:none}
 .ticker-value.up{color:var(--green)}
 .ticker-value.down{color:var(--red)}
 
+/* Backtest panel */
+.backtest-panel{display:none;padding:24px;overflow-y:auto}
+.backtest-panel.active{display:block}
+.bt-form{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;max-width:500px;margin-bottom:24px}
+.bt-form label{color:var(--dim);font-size:12px;padding:6px 0;text-align:right}
+.bt-form select,.bt-form input{background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:4px;font-family:inherit;font-size:12px}
+.bt-form input:focus,.bt-form select:focus{outline:none;border-color:var(--accent)}
+.bt-run-btn{background:var(--accent);color:#fff;border:none;padding:8px 24px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;margin:12px 0;transition:opacity .15s}
+.bt-run-btn:hover{opacity:.85}
+.bt-run-btn:disabled{opacity:.4;cursor:not-allowed}
+.bt-progress{margin:12px 0;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.bt-progress-bar{height:100%;background:var(--accent);transition:width .3s}
+.bt-status{font-size:12px;color:var(--dim);margin:4px 0}
+.bt-results{display:none;margin-top:24px}
+.bt-results.active{display:block}
+.bt-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+.bt-stat-card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 16px}
+.bt-stat-label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+.bt-stat-value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.bt-stat-value.positive{color:var(--green)}
+.bt-stat-value.negative{color:var(--red)}
+.bt-equity-chart{height:200px;margin-bottom:24px;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.bt-trades-table{width:100%;border-collapse:collapse;font-size:12px}
+.bt-trades-table th{text-align:left;padding:6px 12px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border)}
+.bt-trades-table td{padding:6px 12px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
+.bt-trades-table .pnl-pos{color:var(--green)}
+.bt-trades-table .pnl-neg{color:var(--red)}
+
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -88,9 +121,13 @@ a{color:var(--accent);text-decoration:none}
       <span id="statusText">Disconnected</span>
     </div>
   </div>
-  <div class="main">
-    <div class="chart-panel"><div id="chart"></div></div>
-    <div class="right-panel">
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="chart">Chart</button>
+    <button class="tab-btn" data-tab="backtest">Backtest</button>
+  </div>
+  <div class="main" id="mainArea">
+    <div class="chart-panel" id="chartPanel"><div id="chart"></div></div>
+    <div class="right-panel" id="rightPanel">
       <div class="panel-section" style="border-bottom:1px solid var(--border)">
         <div class="panel-header">Order Book</div>
         <div class="panel-body" id="orderbook"></div>
@@ -98,6 +135,41 @@ a{color:var(--accent);text-decoration:none}
       <div class="panel-section">
         <div class="panel-header">Recent Trades</div>
         <div class="panel-body" id="trades"></div>
+      </div>
+    </div>
+    <div class="backtest-panel" id="backtestPanel">
+      <h2 style="margin-bottom:16px;font-size:16px;color:var(--text)">Backtest Runner</h2>
+      <div class="bt-form">
+        <label>Strategy</label>
+        <select id="btStrategy">
+          <option value="scalp_absorption">Scalp Absorption</option>
+          <option value="day_fvg">Day Trade FVG</option>
+          <option value="swing_liquidity">Swing Liquidity</option>
+        </select>
+        <label>Symbol</label>
+        <input type="text" id="btSymbol" value="BTCUSDT">
+        <label>From</label>
+        <input type="date" id="btFrom" value="2024-01-01">
+        <label>To</label>
+        <input type="date" id="btTo" value="2024-12-31">
+        <label>Capital (USDT)</label>
+        <input type="number" id="btCapital" value="10000">
+        <label>Risk %</label>
+        <input type="number" id="btRisk" value="2.0" step="0.1">
+      </div>
+      <button class="bt-run-btn" id="btRunBtn">Run Backtest</button>
+      <div class="bt-progress" id="btProgress" style="display:none">
+        <div class="bt-progress-bar" id="btProgressBar" style="width:0%"></div>
+      </div>
+      <div class="bt-status" id="btStatus"></div>
+      <div class="bt-results" id="btResults">
+        <div class="bt-stats" id="btStats"></div>
+        <div class="bt-equity-chart" id="btEquityChart"></div>
+        <h3 style="margin-bottom:8px;font-size:13px;color:var(--dim)">TRADE LOG</h3>
+        <table class="bt-trades-table">
+          <thead><tr><th>#</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>PnL</th><th>PnL%</th></tr></thead>
+          <tbody id="btTradesBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -116,13 +188,45 @@ a{color:var(--accent);text-decoration:none}
 
 var currentSymbol = 'BTCUSDT';
 var currentTF = '1m';
+var currentTab = 'chart';
 var ws = null;
 var chart = null;
 var candleSeries = null;
 var volumeSeries = null;
+var equityChart = null;
+var equitySeries = null;
 var MAX_TRADES = 100;
 var recentTrades = [];
 var tfToBinance = {'1m':'1m','5m':'5m','15m':'15m','1h':'1h','4h':'4h','1D':'1d'};
+
+// Tab switching
+document.querySelector('.tab-bar').addEventListener('click', function(e) {
+  var btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  currentTab = btn.dataset.tab;
+  switchTab(currentTab);
+});
+
+function switchTab(tab) {
+  var mainArea = document.getElementById('mainArea');
+  var chartPanel = document.getElementById('chartPanel');
+  var rightPanel = document.getElementById('rightPanel');
+  var btPanel = document.getElementById('backtestPanel');
+  if (tab === 'backtest') {
+    mainArea.classList.add('backtest-mode');
+    chartPanel.style.display = 'none';
+    rightPanel.style.display = 'none';
+    btPanel.classList.add('active');
+  } else {
+    mainArea.classList.remove('backtest-mode');
+    chartPanel.style.display = '';
+    rightPanel.style.display = '';
+    btPanel.classList.remove('active');
+    if (chart) chart.applyOptions({});
+  }
+}
 
 function initChart() {
   var container = document.getElementById('chart');
@@ -342,6 +446,143 @@ function fmtVolume(v) {
   if (v >= 1e6) return (v/1e6).toFixed(2) + 'M';
   if (v >= 1e3) return (v/1e3).toFixed(2) + 'K';
   return v.toFixed(2);
+}
+
+// --- Backtest Panel ---
+document.getElementById('btRunBtn').addEventListener('click', runBacktest);
+
+function runBacktest() {
+  var btn = document.getElementById('btRunBtn');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  document.getElementById('btProgress').style.display = 'block';
+  document.getElementById('btProgressBar').style.width = '10%';
+  document.getElementById('btStatus').textContent = 'Connecting to Nautilus...';
+  document.getElementById('btResults').classList.remove('active');
+
+  var payload = {
+    strategy: document.getElementById('btStrategy').value,
+    symbols: [document.getElementById('btSymbol').value],
+    venue: 'BINANCE',
+    data_type: '1m',
+    strategy_params: {
+      starting_balance: document.getElementById('btCapital').value,
+      risk_per_trade_pct: (parseFloat(document.getElementById('btRisk').value) / 100).toString()
+    }
+  };
+
+  document.getElementById('btProgressBar').style.width = '30%';
+  document.getElementById('btStatus').textContent = 'Running backtest...';
+
+  fetch('/api/backtest/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(function(resp) { return resp.json(); })
+  .then(function(data) {
+    document.getElementById('btProgressBar').style.width = '100%';
+    btn.disabled = false;
+    btn.textContent = 'Run Backtest';
+
+    if (data.error) {
+      document.getElementById('btStatus').textContent = 'Error: ' + (data.error || data.error_msg);
+      return;
+    }
+    if (data.status === 'error') {
+      document.getElementById('btStatus').textContent = 'Error: ' + (data.error_msg || 'unknown');
+      return;
+    }
+
+    document.getElementById('btStatus').textContent = 'Complete - ' + (data.total_trades || 0) + ' trades';
+    renderBacktestResults(data);
+  })
+  .catch(function(err) {
+    document.getElementById('btStatus').textContent = 'Error: ' + err;
+    btn.disabled = false;
+    btn.textContent = 'Run Backtest';
+  });
+}
+
+function renderBacktestResults(data) {
+  var results = document.getElementById('btResults');
+  results.classList.add('active');
+
+  // Stats cards
+  var stats = document.getElementById('btStats');
+  while (stats.firstChild) stats.removeChild(stats.firstChild);
+  var cards = [
+    {label:'Total Return', value:(data.total_return * 100).toFixed(2) + '%', pos: data.total_return >= 0},
+    {label:'Sharpe Ratio', value:data.sharpe_ratio.toFixed(2), pos: data.sharpe_ratio >= 0},
+    {label:'Max Drawdown', value:(data.max_drawdown * 100).toFixed(2) + '%', pos: false},
+    {label:'Win Rate', value:(data.win_rate * 100).toFixed(1) + '%', pos: data.win_rate >= 0.5},
+    {label:'Profit Factor', value:data.profit_factor.toFixed(2), pos: data.profit_factor >= 1},
+    {label:'Total Trades', value:String(data.total_trades), pos: true}
+  ];
+  cards.forEach(function(c) {
+    var card = document.createElement('div');
+    card.className = 'bt-stat-card';
+    var lbl = document.createElement('div');
+    lbl.className = 'bt-stat-label';
+    lbl.textContent = c.label;
+    var val = document.createElement('div');
+    val.className = 'bt-stat-value ' + (c.pos ? 'positive' : 'negative');
+    val.textContent = c.value;
+    card.appendChild(lbl);
+    card.appendChild(val);
+    stats.appendChild(card);
+  });
+
+  // Equity curve chart
+  var eqContainer = document.getElementById('btEquityChart');
+  while (eqContainer.firstChild) eqContainer.removeChild(eqContainer.firstChild);
+  if (data.equity_curve && data.equity_curve.length > 0) {
+    equityChart = LightweightCharts.createChart(eqContainer, {
+      layout: {background:{type:'solid',color:'#1a1a1a'},textColor:'#888',fontSize:10},
+      grid: {vertLines:{color:'#2a2a2a'},horzLines:{color:'#2a2a2a'}},
+      rightPriceScale: {borderColor:'#2a2a2a'},
+      timeScale: {borderColor:'#2a2a2a',visible:false},
+      handleScroll:false,handleScale:false,
+    });
+    equitySeries = equityChart.addSeries(LightweightCharts.LineSeries, {
+      color:'#2196f3',lineWidth:2,
+    });
+    var eqData = data.equity_curve.map(function(p, i) {
+      return {time: i, value: p.equity};
+    });
+    equitySeries.setData(eqData);
+    equityChart.timeScale().fitContent();
+    new ResizeObserver(function(entries) {
+      var r = entries[0].contentRect;
+      equityChart.applyOptions({width: r.width, height: r.height});
+    }).observe(eqContainer);
+  }
+
+  // Trade log
+  var tbody = document.getElementById('btTradesBody');
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+  if (data.trades) {
+    data.trades.forEach(function(t, i) {
+      var row = document.createElement('tr');
+      var pnlClass = t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+      var cells = [
+        String(i + 1),
+        t.side,
+        fmtPrice(t.entry_price),
+        fmtPrice(t.exit_price),
+        fmtQty(t.quantity),
+        t.pnl.toFixed(2),
+        t.pnl_pct.toFixed(2) + '%'
+      ];
+      cells.forEach(function(text, ci) {
+        var td = document.createElement('td');
+        td.textContent = text;
+        if (ci >= 5) td.className = pnlClass;
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+  }
 }
 
 document.getElementById('tfButtons').addEventListener('click', function(e) {
