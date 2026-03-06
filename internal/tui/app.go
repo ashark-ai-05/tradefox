@@ -166,12 +166,20 @@ func (a App) handleGlobalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a App) handleTradingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
-		if a.trading.Watchlist.Cursor < len(a.trading.Watchlist.Entries)-1 {
+		if a.trading.Chart.CrosshairOn {
+			if a.trading.Chart.CrosshairPos < len(a.trading.Chart.Candles)-1 {
+				a.trading.Chart.CrosshairPos++
+			}
+		} else if a.trading.Watchlist.Cursor < len(a.trading.Watchlist.Entries)-1 {
 			a.trading.Watchlist.Cursor++
 			a.updateHeaderFromWatchlist()
 		}
 	case "k", "up":
-		if a.trading.Watchlist.Cursor > 0 {
+		if a.trading.Chart.CrosshairOn {
+			if a.trading.Chart.CrosshairPos > 0 {
+				a.trading.Chart.CrosshairPos--
+			}
+		} else if a.trading.Watchlist.Cursor > 0 {
 			a.trading.Watchlist.Cursor--
 			a.updateHeaderFromWatchlist()
 		}
@@ -190,6 +198,25 @@ func (a App) handleTradingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "]":
 		if a.trading.OrderBook.Depth < 25 {
 			a.trading.OrderBook.Depth++
+		}
+	case "<", ",":
+		a.trading.Chart.PrevTimeframe()
+	case ">", ".":
+		a.trading.Chart.NextTimeframe()
+	case "c":
+		a.trading.Chart.CrosshairOn = !a.trading.Chart.CrosshairOn
+		if a.trading.Chart.CrosshairOn {
+			a.trading.Chart.CrosshairPos = len(a.trading.Chart.Candles) - 1
+		}
+	case "l":
+		a.trading.Liquidation.Visible = !a.trading.Liquidation.Visible
+	case "left", "h":
+		if a.trading.Chart.CrosshairOn && a.trading.Chart.CrosshairPos > 0 {
+			a.trading.Chart.CrosshairPos--
+		}
+	case "right":
+		if a.trading.Chart.CrosshairOn && a.trading.Chart.CrosshairPos < len(a.trading.Chart.Candles)-1 {
+			a.trading.Chart.CrosshairPos++
 		}
 	}
 	return a, nil

@@ -7,27 +7,36 @@ import (
 )
 
 // TradingView is the composite main trading view (Tab 1).
-// It joins the order book, watchlist, and positions side by side.
+// Enhanced layout: chart + liquidation heatmap + order book on top,
+// signals + trades + positions on bottom.
 type TradingView struct {
-	OrderBook OrderBookView
-	Watchlist WatchlistView
-	Positions PositionsView
-	Width     int
-	Height    int
-	Theme     theme.Theme
+	Chart       ChartView
+	Liquidation LiquidationView
+	OrderBook   OrderBookView
+	Signals     SignalsView
+	Trades      TradesView
+	Watchlist   WatchlistView
+	Positions   PositionsView
+	Width       int
+	Height      int
+	Theme       theme.Theme
 }
 
 // NewTradingView creates the trading view with all sub-components.
 func NewTradingView(t theme.Theme) TradingView {
 	return TradingView{
-		OrderBook: NewOrderBookView(t),
-		Watchlist: NewWatchlistView(t),
-		Positions: NewPositionsView(t),
-		Theme:     t,
+		Chart:       NewChartView(t),
+		Liquidation: NewLiquidationView(t),
+		OrderBook:   NewOrderBookView(t),
+		Signals:     NewSignalsView(t),
+		Trades:      NewTradesView(t),
+		Watchlist:   NewWatchlistView(t),
+		Positions:   NewPositionsView(t),
+		Theme:       t,
 	}
 }
 
-// View renders the three-column trading layout.
+// View renders the enhanced trading layout.
 func (tv TradingView) View() string {
 	w := tv.Width
 	if w < 60 {
@@ -38,20 +47,55 @@ func (tv TradingView) View() string {
 		h = 35
 	}
 
-	leftW := w * 30 / 100
-	centerW := w * 40 / 100
-	rightW := w - leftW - centerW
+	// Top section: 60% height, Bottom section: 40% height
+	topH := h * 60 / 100
+	botH := h - topH
 
-	tv.OrderBook.Width = leftW
-	tv.OrderBook.Height = h
-	tv.Watchlist.Width = centerW
-	tv.Watchlist.Height = h
-	tv.Positions.Width = rightW
-	tv.Positions.Height = h
+	// Top-left: Chart (60%) + Liquidation heatmap (8 chars wide)
+	// Top-right: Order book (25%)
+	liqW := 10
+	orderBookW := w * 25 / 100
+	chartW := w - liqW - orderBookW
 
-	left := tv.OrderBook.View()
-	center := tv.Watchlist.View()
-	right := tv.Positions.View()
+	tv.Chart.Width = chartW
+	tv.Chart.Height = topH
+	tv.Liquidation.Width = liqW
+	tv.Liquidation.Height = topH
+	tv.OrderBook.Width = orderBookW
+	tv.OrderBook.Height = topH
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
+	chartView := tv.Chart.View()
+	liqView := tv.Liquidation.View()
+	orderView := tv.OrderBook.View()
+
+	var topRow string
+	if tv.Liquidation.Visible {
+		topRow = lipgloss.JoinHorizontal(lipgloss.Top, chartView, liqView, orderView)
+	} else {
+		tv.Chart.Width = chartW + liqW
+		chartView = tv.Chart.View()
+		topRow = lipgloss.JoinHorizontal(lipgloss.Top, chartView, orderView)
+	}
+
+	// Bottom-left: Signal dashboard (40%)
+	// Bottom-center: Recent trades feed (30%)
+	// Bottom-right: Positions + order entry (30%)
+	sigW := w * 40 / 100
+	tradesW := w * 30 / 100
+	posW := w - sigW - tradesW
+
+	tv.Signals.Width = sigW
+	tv.Signals.Height = botH
+	tv.Trades.Width = tradesW
+	tv.Trades.Height = botH
+	tv.Positions.Width = posW
+	tv.Positions.Height = botH
+
+	sigView := tv.Signals.View()
+	tradesView := tv.Trades.View()
+	posView := tv.Positions.View()
+
+	botRow := lipgloss.JoinHorizontal(lipgloss.Top, sigView, tradesView, posView)
+
+	return lipgloss.JoinVertical(lipgloss.Left, topRow, botRow)
 }
