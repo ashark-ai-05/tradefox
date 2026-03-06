@@ -47,3 +47,42 @@ type WatchlistTickerData struct {
 type WatchlistUpdateMsg struct {
 	Tickers []WatchlistTickerData
 }
+
+// BacktestProgressMsg carries backtest progress into the TUI.
+type BacktestProgressMsg struct {
+	BacktestID string
+	Pct        int
+	Status     string
+	Message    string
+}
+
+// BacktestResultMsg carries completed backtest results into the TUI.
+type BacktestResultMsg struct {
+	BacktestID   string
+	TotalReturn  float64
+	SharpeRatio  float64
+	MaxDrawdown  float64
+	WinRate      float64
+	ProfitFactor float64
+	TotalTrades  int
+	EquityCurve  []BacktestEquityPointMsg
+	Trades       []BacktestTradeMsg
+}
+
+// BacktestEquityPointMsg is an equity curve data point.
+type BacktestEquityPointMsg struct {
+	TimestampNs int64
+	Equity      float64
+	Drawdown    float64
+}
+
+// BacktestTradeMsg is a trade record from the backtest.
+type BacktestTradeMsg struct {
+	Symbol     string
+	Side       string
+	EntryPrice float64
+	ExitPrice  float64
+	Quantity   float64
+	PnL        float64
+	PnLPct     float64
+}

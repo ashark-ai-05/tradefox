@@ -27,9 +27,10 @@ const (
 	TabPositions
 	TabSettings
 	TabJournal
+	TabBacktest
 )
 
-const tabCount = 5
+const tabCount = 6
 
 func (t Tab) String() string {
 	switch t {
@@ -43,6 +44,8 @@ func (t Tab) String() string {
 		return "Settings"
 	case TabJournal:
 		return "Journal"
+	case TabBacktest:
+		return "Backtest"
 	default:
 		return "Trading"
 	}
@@ -84,6 +87,7 @@ type App struct {
 	positions views.PositionsView
 	settings  views.ConfigView
 	journal   views.JournalView
+	backtest  views.BacktestView
 
 	orderEntry views.OrderEntryView
 	help       views.HelpView
@@ -161,6 +165,7 @@ func NewAppWithOptions(opts AppOptions) App {
 		positions:  views.NewPositionsView(t),
 		settings:   configView,
 		journal:    journalView,
+		backtest:   views.NewBacktestView(t),
 		orderEntry: views.NewOrderEntryView(t),
 		help:       views.NewHelpView(t),
 		paper:      paper,
@@ -311,6 +316,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.positions.SetSize(msg.Width, msg.Height)
 		a.settings.SetSize(msg.Width, msg.Height)
 		a.journal.SetSize(msg.Width, msg.Height)
+		a.backtest.SetSize(msg.Width, msg.Height)
 		return a, nil
 
 	case tickMsg:
@@ -372,6 +378,48 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.trading.Watchlist.UpdateLivePrices(wt)
 		return a, a.listenLiveCmd()
+
+	case BacktestProgressMsg:
+		a.backtest.State = views.BacktestRunning
+		a.backtest.Progress = msg.Pct
+		if msg.Status == "error" {
+			a.backtest.State = views.BacktestError
+			a.backtest.ErrorMsg = msg.Message
+		}
+		return a, nil
+
+	case BacktestResultMsg:
+		a.backtest.State = views.BacktestComplete
+		a.backtest.Progress = 100
+		a.backtest.Stats = views.BacktestStats{
+			TotalReturn:  msg.TotalReturn,
+			SharpeRatio:  msg.SharpeRatio,
+			MaxDrawdown:  msg.MaxDrawdown,
+			WinRate:      msg.WinRate,
+			ProfitFactor: msg.ProfitFactor,
+			TotalTrades:  msg.TotalTrades,
+		}
+		a.backtest.EquityCurve = make([]views.BacktestEquityPoint, len(msg.EquityCurve))
+		for i, p := range msg.EquityCurve {
+			a.backtest.EquityCurve[i] = views.BacktestEquityPoint{
+				TimestampNs: p.TimestampNs,
+				Equity:      p.Equity,
+				Drawdown:    p.Drawdown,
+			}
+		}
+		a.backtest.Trades = make([]views.BacktestTradeRecord, len(msg.Trades))
+		for i, t := range msg.Trades {
+			a.backtest.Trades[i] = views.BacktestTradeRecord{
+				Symbol:     t.Symbol,
+				Side:       t.Side,
+				EntryPrice: t.EntryPrice,
+				ExitPrice:  t.ExitPrice,
+				Quantity:   t.Quantity,
+				PnL:        t.PnL,
+				PnLPct:     t.PnLPct,
+			}
+		}
+		return a, nil
 
 	case tea.KeyMsg:
 		// Help overlay captures all keys
@@ -436,6 +484,9 @@ func (a App) handleGlobalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "5":
 		a.activeTab = TabJournal
 		return a, nil
+	case "6":
+		a.activeTab = TabBacktest
+		return a, nil
 
 	case "t":
 		// Cycle theme
@@ -458,6 +509,8 @@ func (a App) handleGlobalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleScannerKey(msg)
 	case TabJournal:
 		return a.handleJournalKey(msg)
+	case TabBacktest:
+		return a.handleBacktestKey(msg)
 	}
 
 	return a, nil
@@ -572,6 +625,47 @@ func (a App) handleJournalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+func (a App) handleBacktestKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down":
+		if a.backtest.State == views.BacktestComplete {
+			if a.backtest.TradeScroll < len(a.backtest.Trades)-1 {
+				a.backtest.TradeScroll++
+			}
+		} else {
+			if a.backtest.SelectedField < 5 {
+				a.backtest.SelectedField++
+			}
+		}
+	case "k", "up":
+		if a.backtest.State == views.BacktestComplete {
+			if a.backtest.TradeScroll > 0 {
+				a.backtest.TradeScroll--
+			}
+		} else {
+			if a.backtest.SelectedField > 0 {
+				a.backtest.SelectedField--
+			}
+		}
+	case "enter":
+		if a.backtest.SelectedField == 0 {
+			a.backtest.CycleStrategy()
+		} else if a.backtest.State != views.BacktestRunning {
+			a.backtest.State = views.BacktestRunning
+			a.backtest.Progress = 0
+			a.backtest.ErrorMsg = ""
+		}
+	case "backspace":
+		a.backtest.Backspace()
+	default:
+		ch := msg.String()
+		if len(ch) == 1 {
+			a.backtest.TypeChar(ch)
+		}
+	}
+	return a, nil
+}
+
 func (a App) handleScannerFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -670,6 +764,10 @@ func (a App) View() string {
 		a.journal.Width = a.width
 		a.journal.Height = contentH
 		content = a.journal.View()
+	case TabBacktest:
+		a.backtest.Width = a.width
+		a.backtest.Height = contentH
+		content = a.backtest.View()
 	}
 
 	// Compose full screen
@@ -704,7 +802,7 @@ func (a App) View() string {
 
 func (a App) renderTabBar() string {
 	t := a.theme
-	tabs := []Tab{TabTrading, TabScanner, TabPositions, TabSettings, TabJournal}
+	tabs := []Tab{TabTrading, TabScanner, TabPositions, TabSettings, TabJournal, TabBacktest}
 
 	var rendered []string
 	for _, tab := range tabs {
