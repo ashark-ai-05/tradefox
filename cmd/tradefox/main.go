@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 	"os/signal"
 	"path/filepath"
@@ -30,15 +31,21 @@ import (
 )
 
 func main() {
-	// Check for subcommands before flag parsing
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "data":
-			handleDataCmd(os.Args[2:])
-			return
-		case "backtest":
-			handleBacktestCmd(os.Args[2:])
-			return
+	// Check for subcommands anywhere in args (may follow flags like --nautilus)
+	for _, arg := range os.Args[1:] {
+		if arg == "data" || arg == "backtest" {
+			// Find the subcommand position and split args
+			for j := 1; j < len(os.Args); j++ {
+				if os.Args[j] == arg {
+					switch arg {
+					case "data":
+						handleDataCmd(os.Args[j+1:])
+					case "backtest":
+						handleBacktestCmd(os.Args[j+1:])
+					}
+					return
+				}
+			}
 		}
 	}
 
@@ -237,6 +244,52 @@ func runWeb(port int, symbol string, db *persistence.DB) {
 	_ = srv.Close()
 }
 
+
+// startNautilusForCLI starts the Nautilus Python server for CLI subcommands.
+// It looks for --nautilus-python in the original os.Args.
+func startNautilusForCLI() func() {
+	pythonPath := "python3"
+	port := 50051
+	for i, arg := range os.Args {
+		if arg == "--nautilus-python" && i+1 < len(os.Args) {
+			pythonPath = os.Args[i+1]
+		}
+		if arg == "--nautilus-port" && i+1 < len(os.Args) {
+			p, err := strconv.Atoi(os.Args[i+1])
+			if err == nil {
+				port = p
+			}
+		}
+	}
+
+	// Check if --nautilus flag is present
+	hasNautilus := false
+	for _, arg := range os.Args {
+		if arg == "--nautilus" {
+			hasNautilus = true
+			break
+		}
+	}
+	if !hasNautilus {
+		return func() {}
+	}
+
+	// Start nautilus process
+	proc := nautilus.NewProcess(pythonPath, port, slog.Default())
+	if err := proc.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to start Nautilus: %v\n", err)
+		return func() {}
+	}
+
+	// Wait for server to be ready
+	time.Sleep(2 * time.Second)
+
+	// Set env for cliGRPCConn
+	os.Setenv("TRADEFOX_GRPC", fmt.Sprintf("localhost:%d", port))
+
+	return func() { proc.Stop() }
+}
+
 func cliGRPCConn() (*grpc.ClientConn, error) {
 	addr := os.Getenv("TRADEFOX_GRPC")
 	if addr == "" {
@@ -246,6 +299,9 @@ func cliGRPCConn() (*grpc.ClientConn, error) {
 }
 
 func handleDataCmd(args []string) {
+	cleanup := startNautilusForCLI()
+	defer cleanup()
+
 	if len(args) == 0 {
 		fmt.Println("Usage: tradefox data <import|list>")
 		os.Exit(1)
@@ -343,6 +399,9 @@ func handleDataCmd(args []string) {
 }
 
 func handleBacktestCmd(args []string) {
+	cleanup := startNautilusForCLI()
+	defer cleanup()
+
 	if len(args) == 0 {
 		fmt.Println("Usage: tradefox backtest <run|list|show>")
 		os.Exit(1)
