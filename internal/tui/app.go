@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ashark-ai-05/tradefox/internal/persistence"
 	"github.com/ashark-ai-05/tradefox/internal/tui/components"
 	"github.com/ashark-ai-05/tradefox/internal/tui/theme"
 	"github.com/ashark-ai-05/tradefox/internal/tui/views"
@@ -20,7 +21,10 @@ const (
 	TabScanner
 	TabPositions
 	TabSettings
+	TabJournal
 )
+
+const tabCount = 5
 
 func (t Tab) String() string {
 	switch t {
@@ -32,6 +36,8 @@ func (t Tab) String() string {
 		return "Positions"
 	case TabSettings:
 		return "Settings"
+	case TabJournal:
+		return "Journal"
 	default:
 		return "Trading"
 	}
@@ -46,9 +52,21 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+// AppOptions configures the application at startup.
+type AppOptions struct {
+	ThemeName  string
+	PaperMode  bool
+	MockMode   bool
+	Exchange   string
+	Symbol     string
+	ConfigPath string
+	DB         *persistence.DB
+}
+
 // App is the main BubbleTea model.
 type App struct {
 	theme     theme.Theme
+	themeName string
 	width     int
 	height    int
 	activeTab Tab
@@ -59,26 +77,76 @@ type App struct {
 	trading   views.TradingView
 	scanner   views.ScannerView
 	positions views.PositionsView
-	settings  views.SettingsView
+	settings  views.ConfigView
+	journal   views.JournalView
 
 	orderEntry views.OrderEntryView
 	help       views.HelpView
+
+	paper     *views.PaperEngine
+	paperMode bool
+	mockMode  bool
+
+	db *persistence.DB
 }
 
-// NewApp creates the main application model.
+// NewApp creates the main application model with default settings.
 func NewApp() App {
-	t := theme.Dark()
+	return NewAppWithOptions(AppOptions{ThemeName: "dark"})
+}
+
+// NewAppWithOptions creates the main application model with the given options.
+func NewAppWithOptions(opts AppOptions) App {
+	t := theme.GetTheme(opts.ThemeName)
+
+	paper := views.NewPaperEngine(10000)
+	paper.Active = opts.PaperMode
+	if opts.DB != nil {
+		paper.DB = opts.DB
+	}
+
+	// Set up header based on mode
+	hdr := components.NewHeader(t)
+	if opts.Symbol != "" {
+		hdr.Data.Symbol = opts.Symbol
+	}
+	if opts.Exchange != "" {
+		hdr.Data.Exchange = opts.Exchange
+	}
+	if opts.MockMode {
+		hdr.Data.Connected = false
+		hdr.Data.Exchange = "Mock"
+	}
+
+	configView := views.NewConfigView(t)
+	configView.Data.ThemeName = opts.ThemeName
+	if opts.Exchange != "" {
+		configView.Data.Exchange = opts.Exchange
+	}
+	configView.Data.ConfigPath = opts.ConfigPath
+
+	journalView := views.NewJournalView(t)
+	if opts.DB != nil {
+		journalView.RefreshData(opts.DB)
+	}
+
 	return App{
 		theme:      t,
+		themeName:  opts.ThemeName,
 		activeTab:  TabTrading,
-		header:     components.NewHeader(t),
+		header:     hdr,
 		statusBar:  components.NewStatusBar(t),
 		trading:    views.NewTradingView(t),
 		scanner:    views.NewScannerView(t),
 		positions:  views.NewPositionsView(t),
-		settings:   views.NewSettingsView(t),
+		settings:   configView,
+		journal:    journalView,
 		orderEntry: views.NewOrderEntryView(t),
 		help:       views.NewHelpView(t),
+		paper:      paper,
+		paperMode:  opts.PaperMode,
+		mockMode:   opts.MockMode,
+		db:         opts.DB,
 	}
 }
 
@@ -131,11 +199,11 @@ func (a App) handleGlobalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case "tab":
-		a.activeTab = (a.activeTab + 1) % 4
+		a.activeTab = (a.activeTab + 1) % tabCount
 		return a, nil
 
 	case "shift+tab":
-		a.activeTab = (a.activeTab + 3) % 4
+		a.activeTab = (a.activeTab + tabCount - 1) % tabCount
 		return a, nil
 
 	case "1":
@@ -150,6 +218,21 @@ func (a App) handleGlobalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "4":
 		a.activeTab = TabSettings
 		return a, nil
+	case "5":
+		a.activeTab = TabJournal
+		return a, nil
+
+	case "t":
+		// Cycle theme
+		a.themeName = theme.NextTheme(a.themeName)
+		a.applyTheme(a.themeName)
+		return a, nil
+
+	case "p":
+		// Toggle paper mode
+		a.paperMode = !a.paperMode
+		a.paper.Active = a.paperMode
+		return a, nil
 	}
 
 	// Tab-specific keys
@@ -158,9 +241,22 @@ func (a App) handleGlobalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleTradingKey(msg)
 	case TabScanner:
 		return a.handleScannerKey(msg)
+	case TabJournal:
+		return a.handleJournalKey(msg)
 	}
 
 	return a, nil
+}
+
+func (a *App) applyTheme(name string) {
+	t := theme.GetTheme(name)
+	a.theme = t
+	a.themeName = name
+	a.settings.Data.ThemeName = name
+	// Persist theme selection
+	if a.db != nil {
+		_ = a.db.SaveSetting("theme", name)
+	}
 }
 
 func (a App) handleTradingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -239,24 +335,24 @@ func (a App) handleScannerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		// Switch to trading tab for selected coin
 		a.activeTab = TabTrading
-	case "1":
-		a.scanner.SortBy(0)
-	case "2":
-		a.scanner.SortBy(1)
-	case "3":
-		a.scanner.SortBy(2)
-	case "4":
-		a.scanner.SortBy(3)
-	case "5":
-		a.scanner.SortBy(4)
-	case "6":
-		a.scanner.SortBy(5)
-	case "7":
-		a.scanner.SortBy(6)
-	case "8":
-		a.scanner.SortBy(7)
-	case "9":
-		a.scanner.SortBy(8)
+	}
+	return a, nil
+}
+
+func (a App) handleJournalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down":
+		if a.journal.Cursor < len(a.journal.Trades)-1 {
+			a.journal.Cursor++
+		}
+	case "k", "up":
+		if a.journal.Cursor > 0 {
+			a.journal.Cursor--
+		}
+	case "n":
+		a.journal.AddingTrade = true
+	case "e":
+		a.journal.EditingNotes = true
 	}
 	return a, nil
 }
@@ -355,6 +451,10 @@ func (a App) View() string {
 		a.settings.Width = a.width
 		a.settings.Height = contentH
 		content = a.settings.View()
+	case TabJournal:
+		a.journal.Width = a.width
+		a.journal.Height = contentH
+		content = a.journal.View()
 	}
 
 	// Compose full screen
@@ -389,7 +489,7 @@ func (a App) View() string {
 
 func (a App) renderTabBar() string {
 	t := a.theme
-	tabs := []Tab{TabTrading, TabScanner, TabPositions, TabSettings}
+	tabs := []Tab{TabTrading, TabScanner, TabPositions, TabSettings, TabJournal}
 
 	var rendered []string
 	for _, tab := range tabs {
@@ -409,6 +509,40 @@ func (a App) renderTabBar() string {
 			rendered = append(rendered, style.Render(label))
 		}
 	}
+
+	// Paper mode indicator
+	if a.paperMode {
+		paperLabel := lipgloss.NewStyle().
+			Background(lipgloss.Color("#b8860b")).
+			Foreground(lipgloss.Color("#000000")).
+			Bold(true).
+			Padding(0, 1).
+			Render(" PAPER MODE ")
+		rendered = append(rendered, paperLabel)
+	}
+
+	// Connection status indicator
+	var connDot string
+	if a.mockMode {
+		connDot = lipgloss.NewStyle().
+			Background(t.Colors.StatusBarBg).
+			Foreground(t.Colors.FgDim).
+			Padding(0, 1).
+			Render(" ○ Mock ")
+	} else if a.paperMode {
+		connDot = lipgloss.NewStyle().
+			Background(t.Colors.StatusBarBg).
+			Foreground(t.Colors.Warning).
+			Padding(0, 1).
+			Render(" ◉ Paper ")
+	} else {
+		connDot = lipgloss.NewStyle().
+			Background(t.Colors.StatusBarBg).
+			Foreground(t.Colors.PriceUp).
+			Padding(0, 1).
+			Render(" ● Live ")
+	}
+	rendered = append(rendered, connDot)
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Center, rendered...)
 
