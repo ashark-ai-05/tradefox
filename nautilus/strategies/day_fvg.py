@@ -80,7 +80,7 @@ class DayTradeFVG(TradeFoxStrategy):
         bar_type_5m = BarType(
             instrument_id=self.instrument_id,
             bar_spec=bar_spec_5m,
-            aggregation_source=AggregationSource.EXTERNAL,
+            aggregation_source=AggregationSource.INTERNAL,
         )
         self.subscribe_bars(bar_type_5m)
 

@@ -85,7 +85,7 @@ class SwingLiquidity(TradeFoxStrategy):
             bar_type = BarType(
                 instrument_id=self.instrument_id,
                 bar_spec=bar_spec,
-                aggregation_source=AggregationSource.EXTERNAL,
+                aggregation_source=AggregationSource.INTERNAL,
             )
             self.subscribe_bars(bar_type)
 
