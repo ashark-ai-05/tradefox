@@ -112,8 +112,10 @@ def _build_instrument(symbol: str, info: dict) -> CryptoFuture:
 
 
 def _precision_from_str(value: str) -> int:
-    """Determine decimal precision from a string like '0.01' -> 2."""
-    value = value.rstrip("0")
+    """Determine decimal precision from a string like '0.01' -> 2.
+    
+    Do NOT strip trailing zeros — must match Price.from_str() precision.
+    """
     if "." not in value:
         return 0
     return len(value.split(".")[1])
