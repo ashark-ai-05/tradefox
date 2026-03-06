@@ -27,6 +27,36 @@ func NewWatchlistView(t theme.Theme) WatchlistView {
 	}
 }
 
+// WatchlistTickerData matches tui.WatchlistTickerData to avoid import cycle.
+type WatchlistTickerData struct {
+	Symbol   string
+	Price    float64
+	Change24 float64
+	Volume   float64
+}
+
+// UpdateLivePrices updates watchlist entries with live ticker data.
+func (w *WatchlistView) UpdateLivePrices(tickers []WatchlistTickerData) {
+	lookup := make(map[string]WatchlistTickerData, len(tickers))
+	for _, t := range tickers {
+		lookup[t.Symbol] = t
+	}
+	for i := range w.Entries {
+		if t, ok := lookup[w.Entries[i].Symbol]; ok {
+			w.Entries[i].Price = t.Price
+			w.Entries[i].Change24 = t.Change24
+			w.Entries[i].Volume = t.Volume
+			// Update bid/ask estimates based on price.
+			spread := w.Entries[i].Spread()
+			if spread <= 0 {
+				spread = t.Price * 0.0001
+			}
+			w.Entries[i].Bid = t.Price - spread/2
+			w.Entries[i].Ask = t.Price + spread/2
+		}
+	}
+}
+
 // SelectedEntry returns the currently selected entry.
 func (w WatchlistView) SelectedEntry() mock.WatchlistEntry {
 	if w.Cursor >= 0 && w.Cursor < len(w.Entries) {

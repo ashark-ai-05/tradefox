@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ashark-ai-05/tradefox/internal/tui/live"
 	"github.com/ashark-ai-05/tradefox/internal/tui/mock"
 	"github.com/ashark-ai-05/tradefox/internal/tui/theme"
 )
@@ -59,6 +60,36 @@ func (c *ChartView) LoadCandles() {
 	c.Candles = mock.GenerateMockCandles(c.Symbol, c.Timeframe(), 120)
 	if c.CrosshairPos >= len(c.Candles) {
 		c.CrosshairPos = len(c.Candles) - 1
+	}
+}
+
+// UpdateLiveCandle updates or appends the latest candle from live data.
+func (c *ChartView) UpdateLiveCandle(candle live.Candle) {
+	mc := mock.Candle{
+		Time:   candle.Time,
+		Open:   candle.Open,
+		High:   candle.High,
+		Low:    candle.Low,
+		Close:  candle.Close,
+		Volume: candle.Volume,
+	}
+
+	if len(c.Candles) > 0 {
+		last := &c.Candles[len(c.Candles)-1]
+		if last.Time == mc.Time {
+			// Same candle — update in place.
+			last.High = mc.High
+			last.Low = mc.Low
+			last.Close = mc.Close
+			last.Volume = mc.Volume
+		} else if mc.Time > last.Time {
+			// New candle.
+			c.Candles = append(c.Candles, mc)
+			// Keep last 120 candles.
+			if len(c.Candles) > 120 {
+				c.Candles = c.Candles[len(c.Candles)-120:]
+			}
+		}
 	}
 }
 

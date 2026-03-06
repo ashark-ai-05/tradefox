@@ -6,18 +6,22 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ashark-ai-05/tradefox/internal/tui/live"
 	"github.com/ashark-ai-05/tradefox/internal/tui/mock"
 	"github.com/ashark-ai-05/tradefox/internal/tui/theme"
 )
 
 // OrderBookView displays the depth ladder.
 type OrderBookView struct {
-	Bids   []mock.OrderBookLevel
-	Asks   []mock.OrderBookLevel
-	Width  int
-	Height int
-	Depth  int
-	Theme  theme.Theme
+	Bids     []mock.OrderBookLevel
+	Asks     []mock.OrderBookLevel
+	LiveBids []live.OrderBookLevel
+	LiveAsks []live.OrderBookLevel
+	UseLive  bool
+	Width    int
+	Height   int
+	Depth    int
+	Theme    theme.Theme
 }
 
 // NewOrderBookView creates a new order book view with mock data.
@@ -41,24 +45,51 @@ func (o OrderBookView) View() string {
 
 	innerW := w - 4
 
-	title := t.TableHeader.Render(centerPad("Order Book", innerW))
+	liveTag := ""
+	if o.UseLive && len(o.LiveBids) > 0 {
+		liveTag = " [LIVE]"
+	}
+	title := t.TableHeader.Render(centerPad("Order Book"+liveTag, innerW))
 
 	colHeader := t.Dim.Render(fmt.Sprintf("%-10s %8s %8s %s", "Price", "Qty", "Total", ""))
 	if lipgloss.Width(colHeader) > innerW {
 		colHeader = colHeader[:innerW]
 	}
 
+	// Use live data if available, fallback to mock.
+	type obLevel struct {
+		Price float64
+		Qty   float64
+	}
+	var bids, asks []obLevel
+
+	if o.UseLive && len(o.LiveBids) > 0 {
+		for _, b := range o.LiveBids {
+			bids = append(bids, obLevel{b.Price, b.Qty})
+		}
+		for _, a := range o.LiveAsks {
+			asks = append(asks, obLevel{a.Price, a.Qty})
+		}
+	} else {
+		for _, b := range o.Bids {
+			bids = append(bids, obLevel{b.Price, b.Qty})
+		}
+		for _, a := range o.Asks {
+			asks = append(asks, obLevel{a.Price, a.Qty})
+		}
+	}
+
 	// Find max cumulative for bar scaling
 	var maxCum float64
 	cumAsk := 0.0
-	for _, a := range o.Asks {
+	for _, a := range asks {
 		cumAsk += a.Qty
 		if cumAsk > maxCum {
 			maxCum = cumAsk
 		}
 	}
 	cumBid := 0.0
-	for _, b := range o.Bids {
+	for _, b := range bids {
 		cumBid += b.Qty
 		if cumBid > maxCum {
 			maxCum = cumBid
@@ -69,11 +100,11 @@ func (o OrderBookView) View() string {
 	}
 
 	depth := o.Depth
-	if depth > len(o.Asks) {
-		depth = len(o.Asks)
+	if depth > len(asks) {
+		depth = len(asks)
 	}
-	if depth > len(o.Bids) {
-		depth = len(o.Bids)
+	if depth > len(bids) {
+		depth = len(bids)
 	}
 
 	barWidth := 8
@@ -89,7 +120,7 @@ func (o OrderBookView) View() string {
 	cum := 0.0
 	askLines := make([]string, 0, depth)
 	for i := 0; i < depth; i++ {
-		a := o.Asks[depth-1-i]
+		a := asks[depth-1-i]
 		cum += a.Qty
 		bar := makeBar(cum/maxCum, barWidth)
 		line := fmt.Sprintf("%-10.2f %8.4f %8.4f %s", a.Price, a.Qty, cum, bar)
@@ -99,8 +130,8 @@ func (o OrderBookView) View() string {
 
 	// Spread
 	spread := 0.0
-	if len(o.Asks) > 0 && len(o.Bids) > 0 {
-		spread = o.Asks[0].Price - o.Bids[0].Price
+	if len(asks) > 0 && len(bids) > 0 {
+		spread = asks[0].Price - bids[0].Price
 	}
 	spreadStr := fmt.Sprintf("── Spread: %.2f ──", spread)
 	lines = append(lines, t.Warning.Render(centerPad(spreadStr, innerW)))
@@ -108,7 +139,7 @@ func (o OrderBookView) View() string {
 	// Bids
 	cum = 0.0
 	for i := 0; i < depth; i++ {
-		b := o.Bids[i]
+		b := bids[i]
 		cum += b.Qty
 		bar := makeBar(cum/maxCum, barWidth)
 		line := fmt.Sprintf("%-10.2f %8.4f %8.4f %s", b.Price, b.Qty, cum, bar)

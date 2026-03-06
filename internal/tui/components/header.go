@@ -10,12 +10,13 @@ import (
 
 // HeaderData holds the data displayed in the header.
 type HeaderData struct {
-	Symbol     string
-	Price      float64
-	Change24   float64
-	Spread     float64
-	Connected  bool
-	Exchange   string
+	Symbol      string
+	Price       float64
+	Change24    float64
+	Spread      float64
+	Connected   bool
+	Exchange    string
+	FundingRate float64
 }
 
 // Header is the top bar component.
@@ -59,16 +60,22 @@ func (h Header) View() string {
 
 	spread := t.Header.Foreground(t.Colors.FgDim).Render(fmt.Sprintf(" Spread: %.2f ", h.Data.Spread))
 
+	var fundingStr string
+	if h.Data.FundingRate != 0 {
+		fr := h.Data.FundingRate * 100
+		fundingStr = t.Header.Foreground(t.Colors.FgDim).Render(fmt.Sprintf(" Fund: %.4f%% ", fr))
+	}
+
 	var connStatus string
 	if h.Data.Connected {
-		connStatus = t.Header.Foreground(t.Colors.PriceUp).Render(" ● Connected ")
+		connStatus = t.Header.Foreground(t.Colors.PriceUp).Render(" ● Live ")
 	} else {
 		connStatus = t.Header.Foreground(t.Colors.PriceDown).Render(" ○ Disconnected ")
 	}
 
 	exchange := t.Header.Foreground(t.Colors.Info).Render(fmt.Sprintf(" %s ", h.Data.Exchange))
 
-	left := lipgloss.JoinHorizontal(lipgloss.Center, sym, price, change, spread)
+	left := lipgloss.JoinHorizontal(lipgloss.Center, sym, price, change, spread, fundingStr)
 	right := lipgloss.JoinHorizontal(lipgloss.Center, exchange, connStatus)
 
 	w := h.Width

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/ashark-ai-05/tradefox/internal/persistence"
 	"github.com/ashark-ai-05/tradefox/internal/tui/components"
+	"github.com/ashark-ai-05/tradefox/internal/tui/live"
 	"github.com/ashark-ai-05/tradefox/internal/tui/theme"
 	"github.com/ashark-ai-05/tradefox/internal/tui/views"
 )
@@ -86,6 +88,11 @@ type App struct {
 	paper     *views.PaperEngine
 	paperMode bool
 	mockMode  bool
+	liveMode  bool
+	symbol    string
+
+	bridge *live.LiveDataBridge
+	liveCh chan tea.Msg
 
 	db *persistence.DB
 }
@@ -130,6 +137,15 @@ func NewAppWithOptions(opts AppOptions) App {
 		journalView.RefreshData(opts.DB)
 	}
 
+	liveMode := !opts.MockMode
+	sym := opts.Symbol
+	if sym == "" {
+		sym = "BTCUSDT"
+	}
+
+	bridge := live.NewLiveDataBridge(nil)
+	liveCh := make(chan tea.Msg, 256)
+
 	return App{
 		theme:      t,
 		themeName:  opts.ThemeName,
@@ -146,13 +162,122 @@ func NewAppWithOptions(opts AppOptions) App {
 		paper:      paper,
 		paperMode:  opts.PaperMode,
 		mockMode:   opts.MockMode,
+		liveMode:   liveMode,
+		symbol:     sym,
+		bridge:     bridge,
+		liveCh:     liveCh,
 		db:         opts.DB,
 	}
 }
 
 // Init implements tea.Model.
 func (a App) Init() tea.Cmd {
-	return tickCmd()
+	cmds := []tea.Cmd{tickCmd()}
+
+	if a.liveMode {
+		cmds = append(cmds, a.connectLiveCmd(), a.listenLiveCmd())
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// connectLiveCmd starts the WebSocket connection in a goroutine.
+func (a App) connectLiveCmd() tea.Cmd {
+	return func() tea.Msg {
+		sym := a.symbol
+		ch := a.liveCh
+		bridge := a.bridge
+
+		// Register callbacks that push messages to the live channel.
+		bridge.SubscribeOrderBook(sym, func(bids, asks []live.OrderBookLevel) {
+			select {
+			case ch <- OrderBookUpdateMsg{Bids: bids, Asks: asks}:
+			default:
+			}
+		})
+		bridge.SubscribeTrades(sym, func(evt live.TradeEvent) {
+			select {
+			case ch <- TradeUpdateMsg{Trade: evt}:
+			default:
+			}
+		})
+		bridge.SubscribeTicker(sym, func(ticker live.TickerUpdate) {
+			select {
+			case ch <- TickerUpdateMsg{
+				Price:       ticker.Price,
+				FundingRate: ticker.FundingRate,
+				Bid:         ticker.Bid,
+				Ask:         ticker.Ask,
+			}:
+			default:
+			}
+		})
+		bridge.SubscribeCandles(sym, func(candle live.Candle) {
+			select {
+			case ch <- CandleUpdateMsg{Candle: candle}:
+			default:
+			}
+		})
+
+		ctx := context.Background()
+		err := bridge.ConnectPublic(ctx, sym)
+		if err != nil {
+			return ConnectionStatusMsg{Status: live.StatusError, Connected: false}
+		}
+
+		// Start watchlist REST polling in background.
+		go pollWatchlist(ctx, ch)
+
+		return ConnectionStatusMsg{Status: live.StatusConnected, Connected: true}
+	}
+}
+
+// listenLiveCmd listens for messages from the live data channel.
+func (a App) listenLiveCmd() tea.Cmd {
+	ch := a.liveCh
+	return func() tea.Msg {
+		return <-ch
+	}
+}
+
+// pollWatchlist fetches Binance ticker data every 5 seconds.
+func pollWatchlist(ctx context.Context, ch chan<- tea.Msg) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	// Fetch immediately on start.
+	fetchAndSend(ctx, ch)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fetchAndSend(ctx, ch)
+		}
+	}
+}
+
+func fetchAndSend(ctx context.Context, ch chan<- tea.Msg) {
+	tickers, err := live.FetchWatchlistTickers(ctx)
+	if err != nil {
+		return
+	}
+
+	var data []WatchlistTickerData
+	for _, t := range tickers {
+		data = append(data, WatchlistTickerData{
+			Symbol:   t.Symbol,
+			Price:    t.Price,
+			Change24: t.Change24,
+			Volume:   t.Volume,
+		})
+	}
+
+	select {
+	case ch <- WatchlistUpdateMsg{Tickers: data}:
+	default:
+	}
 }
 
 // Update implements tea.Model.
@@ -165,6 +290,62 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		return a, tickCmd()
+
+	case ConnectionStatusMsg:
+		a.header.Data.Connected = msg.Connected
+		if msg.Connected {
+			a.header.Data.Exchange = "Binance"
+		}
+		return a, nil
+
+	case OrderBookUpdateMsg:
+		a.trading.OrderBook.LiveBids = msg.Bids
+		a.trading.OrderBook.LiveAsks = msg.Asks
+		a.trading.OrderBook.UseLive = true
+		// Also update paper engine's best bid/ask
+		if a.paper != nil && len(msg.Bids) > 0 && len(msg.Asks) > 0 {
+			a.paper.SetBestBidAsk(msg.Bids[0].Price, msg.Asks[0].Price)
+		}
+		return a, a.listenLiveCmd()
+
+	case TradeUpdateMsg:
+		a.trading.Trades.AddLiveTrade(msg.Trade)
+		// Check paper pending orders against trade price
+		if a.paper != nil && a.paper.Active {
+			a.paper.CheckTradePrice(msg.Trade.Symbol, msg.Trade.Price)
+		}
+		return a, a.listenLiveCmd()
+
+	case TickerUpdateMsg:
+		if msg.Price > 0 {
+			a.header.Data.Price = msg.Price
+			a.header.Data.FundingRate = msg.FundingRate
+		}
+		if msg.Bid > 0 {
+			a.header.Data.Spread = msg.Ask - msg.Bid
+		}
+		// Update paper position marks
+		if a.paper != nil && a.paper.Active && msg.Price > 0 {
+			a.paper.UpdateMarkPrice(a.symbol, msg.Price)
+		}
+		return a, a.listenLiveCmd()
+
+	case CandleUpdateMsg:
+		a.trading.Chart.UpdateLiveCandle(msg.Candle)
+		return a, a.listenLiveCmd()
+
+	case WatchlistUpdateMsg:
+		wt := make([]views.WatchlistTickerData, len(msg.Tickers))
+		for i, t := range msg.Tickers {
+			wt[i] = views.WatchlistTickerData{
+				Symbol:   t.Symbol,
+				Price:    t.Price,
+				Change24: t.Change24,
+				Volume:   t.Volume,
+			}
+		}
+		a.trading.Watchlist.UpdateLivePrices(wt)
+		return a, a.listenLiveCmd()
 
 	case tea.KeyMsg:
 		// Help overlay captures all keys
@@ -189,9 +370,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+// handleQuit cleans up live connections.
+func (a *App) handleQuit() {
+	if a.bridge != nil {
+		a.bridge.Close()
+	}
+}
+
 func (a App) handleGlobalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
+		a.handleQuit()
 		return a, tea.Quit
 
 	case "?":
