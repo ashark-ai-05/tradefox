@@ -182,22 +182,25 @@ type combinedStreamMsg struct {
 }
 
 type aggTradeMsg struct {
-	Event    string `json:"e"`
-	Symbol   string `json:"s"`
-	Price    string `json:"p"`
-	Quantity string `json:"q"`
-	IsMaker  bool   `json:"m"`
-	Time     int64  `json:"T"`
+	Event     string `json:"e"`
+	EventTime int64  `json:"E"`
+	Symbol    string `json:"s"`
+	Price     string `json:"p"`
+	Quantity  string `json:"q"`
+	IsMaker   bool   `json:"m"`
+	Time      int64  `json:"T"`
 }
 
 type depthMsg struct {
-	Event string     `json:"e"`
-	Bids  [][]string `json:"b"`
-	Asks  [][]string `json:"a"`
+	Event     string     `json:"e"`
+	EventTime int64      `json:"E"`
+	Bids      [][]string `json:"b"`
+	Asks      [][]string `json:"a"`
 }
 
 type markPriceMsg struct {
 	Event       string `json:"e"`
+	EventTime   int64  `json:"E"`
 	Symbol      string `json:"s"`
 	MarkPrice   string `json:"p"`
 	FundingRate string `json:"r"`
@@ -205,8 +208,9 @@ type markPriceMsg struct {
 }
 
 type klineMsg struct {
-	Event  string `json:"e"`
-	Kline  kline  `json:"k"`
+	Event     string `json:"e"`
+	EventTime int64  `json:"E"`
+	Kline     kline  `json:"k"`
 }
 
 type kline struct {
