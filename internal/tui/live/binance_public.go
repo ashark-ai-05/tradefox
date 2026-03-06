@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,6 +43,7 @@ type BinancePublicFeed struct {
 	done   chan struct{}
 
 	reconnectAttempt int
+	msgOnce          sync.Once
 }
 
 // NewBinancePublicFeed creates a new feed for the given symbol (case-insensitive).
@@ -118,13 +120,15 @@ func (f *BinancePublicFeed) dial() error {
 
 	// Set ping/pong handler — Binance sends pings, we must respond with pong.
 	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 	conn.SetPingHandler(func(msg string) error {
 		_ = conn.WriteControl(websocket.PongMessage, []byte(msg), time.Now().Add(5*time.Second))
-		return conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
-	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+	fmt.Fprintf(os.Stderr, "TradeFox: WebSocket connected to %s\n", u.String())
 
 	f.mu.Lock()
 	f.conn = conn
@@ -158,13 +162,14 @@ func (f *BinancePublicFeed) readLoop() {
 			if f.ctx.Err() != nil {
 				return
 			}
+			fmt.Fprintf(os.Stderr, "TradeFox: WebSocket error: %v\n", err)
 			// Connection lost — attempt reconnect.
 			f.reconnect()
 			continue
 		}
 
 		// Reset read deadline on successful read.
-		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		f.handleMessage(msg)
 	}
@@ -215,6 +220,10 @@ type kline struct {
 }
 
 func (f *BinancePublicFeed) handleMessage(raw []byte) {
+	f.msgOnce.Do(func() {
+		fmt.Fprintf(os.Stderr, "TradeFox: receiving live data\n")
+	})
+
 	var wrapper combinedStreamMsg
 	if err := json.Unmarshal(raw, &wrapper); err != nil {
 		return
@@ -369,6 +378,8 @@ func (f *BinancePublicFeed) reconnect() {
 		backoff = 30
 	}
 	delay := time.Duration(backoff) * time.Second
+
+	fmt.Fprintf(os.Stderr, "TradeFox: reconnecting...\n")
 
 	select {
 	case <-f.ctx.Done():

@@ -2,7 +2,10 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -91,8 +94,9 @@ type App struct {
 	liveMode  bool
 	symbol    string
 
-	bridge *live.LiveDataBridge
-	liveCh chan tea.Msg
+	bridge     *live.LiveDataBridge
+	liveCh     chan tea.Msg
+	chFullOnce sync.Once
 
 	db *persistence.DB
 }
@@ -188,17 +192,25 @@ func (a App) connectLiveCmd() tea.Cmd {
 		ch := a.liveCh
 		bridge := a.bridge
 
+		chFullOnce := &a.chFullOnce
+
 		// Register callbacks that push messages to the live channel.
 		bridge.SubscribeOrderBook(sym, func(bids, asks []live.OrderBookLevel) {
 			select {
 			case ch <- OrderBookUpdateMsg{Bids: bids, Asks: asks}:
 			default:
+				chFullOnce.Do(func() {
+					fmt.Fprintf(os.Stderr, "TradeFox: live channel full, dropping messages\n")
+				})
 			}
 		})
 		bridge.SubscribeTrades(sym, func(evt live.TradeEvent) {
 			select {
 			case ch <- TradeUpdateMsg{Trade: evt}:
 			default:
+				chFullOnce.Do(func() {
+					fmt.Fprintf(os.Stderr, "TradeFox: live channel full, dropping messages\n")
+				})
 			}
 		})
 		bridge.SubscribeTicker(sym, func(ticker live.TickerUpdate) {
@@ -210,12 +222,18 @@ func (a App) connectLiveCmd() tea.Cmd {
 				Ask:         ticker.Ask,
 			}:
 			default:
+				chFullOnce.Do(func() {
+					fmt.Fprintf(os.Stderr, "TradeFox: live channel full, dropping messages\n")
+				})
 			}
 		})
 		bridge.SubscribeCandles(sym, func(candle live.Candle) {
 			select {
 			case ch <- CandleUpdateMsg{Candle: candle}:
 			default:
+				chFullOnce.Do(func() {
+					fmt.Fprintf(os.Stderr, "TradeFox: live channel full, dropping messages\n")
+				})
 			}
 		})
 
@@ -286,6 +304,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
+		a.header.SetSize(msg.Width)
+		a.statusBar.SetSize(msg.Width)
+		a.trading.SetSize(msg.Width, msg.Height)
+		a.scanner.SetSize(msg.Width, msg.Height)
+		a.positions.SetSize(msg.Width, msg.Height)
+		a.settings.SetSize(msg.Width, msg.Height)
+		a.journal.SetSize(msg.Width, msg.Height)
 		return a, nil
 
 	case tickMsg:

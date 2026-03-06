@@ -2,6 +2,8 @@ package live
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -289,6 +291,8 @@ func (b *LiveDataBridge) ConnectPublic(ctx context.Context, symbol string) error
 		}
 		b.cbMu.RUnlock()
 	})
+
+	fmt.Fprintf(os.Stderr, "TradeFox: callbacks registered for %s\n", upperSymbol)
 
 	if err := feed.Connect(ctx); err != nil {
 		b.mu.Lock()
