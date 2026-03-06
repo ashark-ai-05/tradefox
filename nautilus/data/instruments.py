@@ -1,3 +1,4 @@
+from decimal import Decimal
 """Binance instrument definitions for NautilusTrader."""
 
 from __future__ import annotations
@@ -102,10 +103,10 @@ def _build_instrument(symbol: str, info: dict) -> CryptoFuture:
         min_notional=Money.from_str(f"{min_notional} {quote}"),
         max_price=Price.from_str("1000000.0"),
         min_price=Price.from_str(tick_size),
-        margin_init=Quantity.from_str("0.05"),
-        margin_maint=Quantity.from_str("0.025"),
-        maker_fee=Quantity.from_str("0.0002"),
-        taker_fee=Quantity.from_str("0.0004"),
+        margin_init=Decimal("0.05"),
+        margin_maint=Decimal("0.025"),
+        maker_fee=Decimal("0.0002"),
+        taker_fee=Decimal("0.0004"),
         ts_event=0,
         ts_init=0,
     )
