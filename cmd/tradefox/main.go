@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -253,8 +254,28 @@ func handleDataCmd(args []string) {
 		fs := flag.NewFlagSet("data import", flag.ExitOnError)
 		symbol := fs.String("symbol", "BTCUSDT", "Symbol to import")
 		interval := fs.String("interval", "1m", "Bar interval (1m, 5m, 15m, 1h, 4h)")
-		startNs := fs.Int64("start-ns", 0, "Start time in nanoseconds")
+		fromDate := fs.String("from", "", "Start date (YYYY-MM-DD)")
+		toDate := fs.String("to", "", "End date (YYYY-MM-DD)")
 		_ = fs.Parse(args[1:])
+
+		var startNs, endNs int64
+		if *fromDate != "" {
+			t, err := time.Parse("2006-01-02", *fromDate)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: invalid --from date: %v\n", err)
+				os.Exit(1)
+			}
+			startNs = t.UnixNano()
+		}
+		if *toDate != "" {
+			t, err := time.Parse("2006-01-02", *toDate)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: invalid --to date: %v\n", err)
+				os.Exit(1)
+			}
+			endNs = t.UnixNano()
+		}
+		_ = endNs
 
 		conn, err := cliGRPCConn()
 		if err != nil {
@@ -268,7 +289,8 @@ func handleDataCmd(args []string) {
 			Venue:    "BINANCE",
 			Symbol:   *symbol,
 			DataType: *interval,
-			StartNs:  *startNs,
+			StartNs:  startNs,
+			EndNs:    endNs,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -333,7 +355,27 @@ func handleBacktestCmd(args []string) {
 		riskPct := fs.String("risk", "0.02", "Risk per trade (fraction)")
 		venue := fs.String("venue", "BINANCE", "Venue")
 		dataType := fs.String("data-type", "", "Bar type string")
+		fromDate := fs.String("from", "", "Start date (YYYY-MM-DD)")
+		toDate := fs.String("to", "", "End date (YYYY-MM-DD)")
 		_ = fs.Parse(args[1:])
+
+		var btStartNs, btEndNs int64
+		if *fromDate != "" {
+			t, err := time.Parse("2006-01-02", *fromDate)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: invalid --from date: %v\n", err)
+				os.Exit(1)
+			}
+			btStartNs = t.UnixNano()
+		}
+		if *toDate != "" {
+			t, err := time.Parse("2006-01-02", *toDate)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: invalid --to date: %v\n", err)
+				os.Exit(1)
+			}
+			btEndNs = t.UnixNano()
+		}
 
 		conn, err := cliGRPCConn()
 		if err != nil {
@@ -348,6 +390,8 @@ func handleBacktestCmd(args []string) {
 			Venue:         *venue,
 			Symbols:       []string{*symbol},
 			DataType:      *dataType,
+			StartNs:       btStartNs,
+			EndNs:         btEndNs,
 			StrategyParams: map[string]string{
 				"starting_balance":   *capital,
 				"risk_per_trade_pct": *riskPct,
