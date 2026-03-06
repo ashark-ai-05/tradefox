@@ -194,17 +194,21 @@ type aggTradeMsg struct {
 type depthMsg struct {
 	Event     string     `json:"e"`
 	EventTime int64      `json:"E"`
+	TxTime    int64      `json:"T"`
+	Symbol    string     `json:"s"`
 	Bids      [][]string `json:"b"`
 	Asks      [][]string `json:"a"`
 }
 
 type markPriceMsg struct {
-	Event       string `json:"e"`
-	EventTime   int64  `json:"E"`
-	Symbol      string `json:"s"`
-	MarkPrice   string `json:"p"`
-	FundingRate string `json:"r"`
-	Time        int64  `json:"T"`
+	Event          string `json:"e"`
+	EventTime      int64  `json:"E"`
+	Symbol         string `json:"s"`
+	MarkPrice      string `json:"p"`
+	IndexPrice     string `json:"i"`
+	EstSettlePrice string `json:"P"`
+	FundingRate    string `json:"r"`
+	NextFundTime   int64  `json:"T"`
 }
 
 type klineMsg struct {
@@ -215,6 +219,7 @@ type klineMsg struct {
 
 type kline struct {
 	StartTime int64  `json:"t"`
+	CloseTime int64  `json:"T"`
 	Open      string `json:"o"`
 	High      string `json:"h"`
 	Low       string `json:"l"`
