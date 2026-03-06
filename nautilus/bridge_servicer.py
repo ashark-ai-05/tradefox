@@ -173,6 +173,7 @@ class BacktestServicer(nautilus_pb2_grpc.BacktestServiceServicer):
 
         try:
             # Load instrument
+            import traceback
             instrument = fetch_binance_instrument(symbol)
 
             # Create engine
@@ -252,9 +253,11 @@ class BacktestServicer(nautilus_pb2_grpc.BacktestServiceServicer):
             )
 
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
             yield nautilus_pb2.BacktestProgress(
                 backtest_id=backtest_id, pct_complete=0.0,
-                status="error", message=f"Backtest error: {e}",
+                status="error", message=f"Backtest error: {e}\n{tb}",
                 timestamp_ns=time.time_ns(),
             )
 
