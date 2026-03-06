@@ -1,7 +1,7 @@
-from decimal import Decimal
 """Binance instrument definitions for NautilusTrader."""
 
 from __future__ import annotations
+from decimal import Decimal
 
 import json
 import os
