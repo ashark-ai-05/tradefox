@@ -3,6 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/fs"
+	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -10,8 +13,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ashark-ai-05/tradefox/internal/api"
+	"github.com/ashark-ai-05/tradefox/internal/api/handlers"
 	"github.com/ashark-ai-05/tradefox/internal/persistence"
 	"github.com/ashark-ai-05/tradefox/internal/tui"
+	"github.com/ashark-ai-05/tradefox/web"
 )
 
 func main() {
@@ -22,6 +28,8 @@ func main() {
 	exchange := flag.String("exchange", "", "Exchange to connect (binance, bybit, etc.)")
 	symbol := flag.String("symbol", "BTCUSDT", "Default symbol")
 	mockMode := flag.Bool("mock", false, "Force mock data mode (no exchange connection)")
+	webMode := flag.Bool("web", false, "Start web UI instead of terminal UI")
+	webPort := flag.Int("web-port", 8080, "Port for web UI server")
 	flag.Parse()
 
 	// Ensure ~/.tradefox/ directory exists
@@ -44,8 +52,14 @@ func main() {
 	db, err := persistence.NewDB(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not open journal database: %v\n", err)
-		// Continue without persistence
 	}
+
+	if *webMode {
+		runWeb(*webPort, *symbol, db)
+		return
+	}
+
+	// --- TUI mode ---
 
 	// Load persisted theme if not specified via flag
 	if *themeName == "" && db != nil {
@@ -57,9 +71,6 @@ func main() {
 		*themeName = "dark"
 	}
 
-	// Build app options
-	// Default: live mode with Binance public WS (no keys needed).
-	// Use --mock to force mock data mode.
 	opts := tui.AppOptions{
 		ThemeName:  *themeName,
 		PaperMode:  *paper,
@@ -76,7 +87,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "TradeFox: connecting to Binance Futures (public) for %s...\n", *symbol)
 	}
 
-	// Graceful shutdown on SIGINT/SIGTERM
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -88,7 +98,6 @@ func main() {
 		tea.WithMouseCellMotion(),
 	)
 
-	// Run shutdown listener in background
 	go func() {
 		<-sigCh
 		if db != nil {
@@ -109,3 +118,60 @@ func main() {
 		db.Close()
 	}
 }
+
+func runWeb(port int, symbol string, db *persistence.DB) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	addr := fmt.Sprintf(":%d", port)
+	router := api.NewRouter(logger)
+
+	// Chart-specific endpoints
+	router.Get("/api/candles", handlers.GetCandles(logger))
+	router.Get("/ws/chart", handlers.ServeChartWS(logger))
+
+	// Serve embedded frontend (SPA fallback)
+	frontendFS, err := fs.Sub(web.DistFS, "dist")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: could not load embedded frontend: %v\n", err)
+		os.Exit(1)
+	}
+	fileServer := http.FileServer(http.FS(frontendFS))
+	router.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if len(path) > 0 && path[0] == '/' {
+			path = path[1:]
+		}
+		f, openErr := frontendFS.Open(path)
+		if openErr != nil {
+			r.URL.Path = "/"
+		} else {
+			f.Close()
+		}
+		fileServer.ServeHTTP(w, r)
+	}))
+
+	srv := api.NewServer(addr, router)
+
+	// Graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		fmt.Fprintf(os.Stderr, "\nTradeFox Web UI: http://localhost:%d\n", port)
+		fmt.Fprintf(os.Stderr, "Symbol: %s | Press Ctrl+C to stop\n\n", symbol)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("HTTP server error", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	<-sigCh
+	fmt.Fprintln(os.Stderr, "\nShutting down...")
+
+	if db != nil {
+		db.Close()
+	}
+
+	_ = srv.Close()
+}
+
