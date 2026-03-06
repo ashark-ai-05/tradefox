@@ -62,6 +62,8 @@ type PaperEngine struct {
 	OrderHistory  []PaperOrder
 	nextOrderID   int64
 	DB            *persistence.DB
+	bestBid       float64
+	bestAsk       float64
 }
 
 // NewPaperEngine creates a paper trading engine.
@@ -91,8 +93,14 @@ func (pe *PaperEngine) SubmitOrder(symbol, side string, orderType OrderType, pri
 	pe.nextOrderID++
 
 	if orderType == OrderTypeMarket {
-		// Fill immediately at current price
-		order.FilledAt = price
+		// Fill at best bid (sell) or ask (buy) from live order book, or fallback to given price.
+		fillPrice := price
+		if side == "BUY" && pe.bestAsk > 0 {
+			fillPrice = pe.bestAsk
+		} else if side == "SELL" && pe.bestBid > 0 {
+			fillPrice = pe.bestBid
+		}
+		order.FilledAt = fillPrice
 		order.Status = "FILLED"
 		order.FilledTime = time.Now()
 		pe.applyFill(order)
@@ -216,6 +224,69 @@ func (pe *PaperEngine) logPaperTrade(pos PaperPosition, exitPrice float64) {
 		Exchange:   "paper",
 		Paper:      true,
 	})
+}
+
+// SetBestBidAsk stores the current best bid and ask for market order fills.
+func (pe *PaperEngine) SetBestBidAsk(bid, ask float64) {
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+	pe.bestBid = bid
+	pe.bestAsk = ask
+}
+
+// UpdateMarkPrice updates the mark price on all positions for the given symbol.
+func (pe *PaperEngine) UpdateMarkPrice(symbol string, price float64) {
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+	for i := range pe.Positions {
+		if pe.Positions[i].Symbol == symbol {
+			pe.Positions[i].Mark = price
+		}
+	}
+}
+
+// CheckTradePrice checks pending orders against a live trade price and fills if triggered.
+func (pe *PaperEngine) CheckTradePrice(symbol string, tradePrice float64) {
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+
+	var remaining []PaperOrder
+	for _, order := range pe.PendingOrders {
+		if order.Symbol != symbol {
+			remaining = append(remaining, order)
+			continue
+		}
+
+		triggered := false
+		switch order.Type {
+		case OrderTypeLimit:
+			if order.Side == "BUY" && tradePrice <= order.Price {
+				triggered = true
+				order.FilledAt = order.Price
+			} else if order.Side == "SELL" && tradePrice >= order.Price {
+				triggered = true
+				order.FilledAt = order.Price
+			}
+		case OrderTypeStopLimit:
+			if order.Side == "BUY" && tradePrice >= order.Price {
+				triggered = true
+				order.FilledAt = tradePrice
+			} else if order.Side == "SELL" && tradePrice <= order.Price {
+				triggered = true
+				order.FilledAt = tradePrice
+			}
+		}
+
+		if triggered {
+			order.Status = "FILLED"
+			order.FilledTime = time.Now()
+			pe.applyFill(order)
+			pe.OrderHistory = append(pe.OrderHistory, order)
+		} else {
+			remaining = append(remaining, order)
+		}
+	}
+	pe.PendingOrders = remaining
 }
 
 // TotalPnL returns unrealized PnL across all positions.

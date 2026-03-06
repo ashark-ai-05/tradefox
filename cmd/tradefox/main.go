@@ -58,18 +58,22 @@ func main() {
 	}
 
 	// Build app options
+	// Default: live mode with Binance public WS (no keys needed).
+	// Use --mock to force mock data mode.
 	opts := tui.AppOptions{
 		ThemeName:  *themeName,
 		PaperMode:  *paper,
-		MockMode:   *mockMode || *exchange == "",
+		MockMode:   *mockMode,
 		Exchange:   *exchange,
 		Symbol:     *symbol,
 		ConfigPath: *configPath,
 		DB:         db,
 	}
 
-	if opts.MockMode && *exchange == "" {
-		fmt.Fprintln(os.Stderr, "TradeFox: no exchange configured, using mock data")
+	if opts.MockMode {
+		fmt.Fprintln(os.Stderr, "TradeFox: mock data mode (use without --mock for live Binance data)")
+	} else {
+		fmt.Fprintf(os.Stderr, "TradeFox: connecting to Binance Futures (public) for %s...\n", *symbol)
 	}
 
 	// Graceful shutdown on SIGINT/SIGTERM
