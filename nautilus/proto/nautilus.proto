@@ -1,0 +1,352 @@
+syntax = "proto3";
+package tradefox.nautilus;
+
+option go_package = "github.com/ashark-ai-05/tradefox/internal/nautilus/proto";
+
+// ─── Common Messages ───
+
+message Empty {}
+
+message StatusResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+// ─── Strategy Management ───
+
+service StrategyService {
+  rpc ListStrategies(Empty) returns (StrategyList);
+  rpc DeployStrategy(DeployRequest) returns (DeployResponse);
+  rpc StopStrategy(StrategyId) returns (StatusResponse);
+  rpc GetStrategyState(StrategyId) returns (StrategyState);
+  rpc StreamSignals(StrategyId) returns (stream Signal);
+}
+
+message StrategyId {
+  string id = 1;
+}
+
+message StrategyList {
+  repeated StrategySummary strategies = 1;
+}
+
+message StrategySummary {
+  string id = 1;
+  string class_name = 2;
+  string state = 3;
+  map<string, string> params = 4;
+  int64 started_at_ns = 5;
+}
+
+message DeployRequest {
+  string strategy_class = 1;
+  map<string, string> params = 2;
+  repeated string symbols = 3;
+  string venue = 4;
+}
+
+message DeployResponse {
+  bool ok = 1;
+  string strategy_id = 2;
+  string message = 3;
+}
+
+message StrategyState {
+  string id = 1;
+  string class_name = 2;
+  string state = 3;
+  map<string, string> params = 4;
+  int64 started_at_ns = 5;
+  double unrealized_pnl = 6;
+  double realized_pnl = 7;
+  int32 open_positions = 8;
+  int32 total_signals = 9;
+}
+
+message Signal {
+  string strategy_id = 1;
+  string signal_type = 2;
+  string symbol = 3;
+  string side = 4;
+  double price = 5;
+  double size = 6;
+  double confidence = 7;
+  int64 timestamp_ns = 8;
+  map<string, string> metadata = 9;
+}
+
+// ─── Order Execution ───
+
+service ExecutionService {
+  rpc SubmitOrder(OrderRequest) returns (OrderResponse);
+  rpc CancelOrder(CancelRequest) returns (StatusResponse);
+  rpc ModifyOrder(ModifyRequest) returns (OrderResponse);
+  rpc StreamOrderUpdates(Empty) returns (stream OrderUpdate);
+  rpc StreamPositionUpdates(Empty) returns (stream PositionUpdate);
+}
+
+message OrderRequest {
+  string symbol = 1;
+  string side = 2;
+  string order_type = 3;
+  double quantity = 4;
+  double price = 5;
+  string time_in_force = 6;
+  double stop_loss = 7;
+  double take_profit = 8;
+  string strategy_id = 9;
+  string client_order_id = 10;
+}
+
+message CancelRequest {
+  string order_id = 1;
+  string symbol = 2;
+  string client_order_id = 3;
+}
+
+message ModifyRequest {
+  string order_id = 1;
+  string symbol = 2;
+  double new_price = 3;
+  double new_quantity = 4;
+  double new_stop_loss = 5;
+  double new_take_profit = 6;
+}
+
+message OrderResponse {
+  bool ok = 1;
+  string order_id = 2;
+  string client_order_id = 3;
+  string status = 4;
+  string message = 5;
+}
+
+message OrderUpdate {
+  string order_id = 1;
+  string client_order_id = 2;
+  string symbol = 3;
+  string status = 4;
+  string side = 5;
+  double price = 6;
+  double quantity = 7;
+  double filled_qty = 8;
+  double avg_price = 9;
+  int64 timestamp_ns = 10;
+}
+
+message PositionUpdate {
+  string symbol = 1;
+  string side = 2;
+  double quantity = 3;
+  double avg_entry = 4;
+  double unrealized_pnl = 5;
+  double realized_pnl = 6;
+  int64 timestamp_ns = 7;
+}
+
+// ─── Portfolio & Risk ───
+
+service PortfolioService {
+  rpc GetPortfolio(Empty) returns (Portfolio);
+  rpc GetPositions(PositionFilter) returns (PositionList);
+  rpc GetRiskMetrics(Empty) returns (RiskMetrics);
+  rpc StreamPnL(Empty) returns (stream PnLUpdate);
+}
+
+message Portfolio {
+  double total_equity = 1;
+  double available_balance = 2;
+  double margin_used = 3;
+  string currency = 4;
+  repeated PortfolioPosition positions = 5;
+}
+
+message PortfolioPosition {
+  string symbol = 1;
+  string side = 2;
+  double quantity = 3;
+  double avg_entry = 4;
+  double mark_price = 5;
+  double unrealized_pnl = 6;
+  double margin = 7;
+}
+
+message PositionFilter {
+  string symbol = 1;
+  string side = 2;
+  string strategy_id = 3;
+  bool open_only = 4;
+}
+
+message PositionList {
+  repeated PortfolioPosition positions = 1;
+}
+
+message PositionRisk {
+  string symbol = 1;
+  double exposure_pct = 2;
+  double unrealized_pnl = 3;
+  double max_loss = 4;
+}
+
+message RiskMetrics {
+  double total_equity = 1;
+  double unrealized_pnl = 2;
+  double realized_pnl = 3;
+  double max_drawdown = 4;
+  double daily_pnl = 5;
+  double daily_loss_limit = 6;
+  double daily_loss_used = 7;
+  bool kill_switch_active = 8;
+  repeated PositionRisk positions = 9;
+}
+
+message PnLUpdate {
+  double total_equity = 1;
+  double unrealized_pnl = 2;
+  double realized_pnl = 3;
+  double daily_pnl = 4;
+  int64 timestamp_ns = 5;
+}
+
+// ─── Backtesting ───
+
+service BacktestService {
+  rpc RunBacktest(BacktestConfig) returns (stream BacktestProgress);
+  rpc GetBacktestResult(BacktestId) returns (BacktestResult);
+  rpc ListBacktests(Empty) returns (BacktestList);
+  rpc CompareStrategies(CompareRequest) returns (CompareResult);
+}
+
+message BacktestConfig {
+  string strategy_class = 1;
+  map<string, string> strategy_params = 2;
+  string venue = 3;
+  repeated string symbols = 4;
+  int64 start_ns = 5;
+  int64 end_ns = 6;
+  string data_type = 7;
+}
+
+message BacktestId {
+  string id = 1;
+}
+
+message BacktestProgress {
+  string backtest_id = 1;
+  double pct_complete = 2;
+  string status = 3;
+  string message = 4;
+  int64 timestamp_ns = 5;
+}
+
+message BacktestResult {
+  string id = 1;
+  double total_return = 2;
+  double sharpe_ratio = 3;
+  double max_drawdown = 4;
+  double win_rate = 5;
+  int32 total_trades = 6;
+  double profit_factor = 7;
+  repeated EquityCurvePoint equity_curve = 8;
+  repeated TradeRecord trades = 9;
+}
+
+message BacktestList {
+  repeated BacktestSummary backtests = 1;
+}
+
+message BacktestSummary {
+  string id = 1;
+  string strategy_class = 2;
+  string status = 3;
+  double total_return = 4;
+  double sharpe_ratio = 5;
+  int64 started_at_ns = 6;
+  int64 completed_at_ns = 7;
+}
+
+message CompareRequest {
+  repeated string backtest_ids = 1;
+}
+
+message CompareResult {
+  repeated BacktestResult results = 1;
+}
+
+message EquityCurvePoint {
+  int64 timestamp_ns = 1;
+  double equity = 2;
+  double drawdown = 3;
+}
+
+message TradeRecord {
+  string symbol = 1;
+  string side = 2;
+  double entry_price = 3;
+  double exit_price = 4;
+  double quantity = 5;
+  double pnl = 6;
+  double pnl_pct = 7;
+  int64 entry_time_ns = 8;
+  int64 exit_time_ns = 9;
+  string strategy_id = 10;
+}
+
+// ─── Data Catalog ───
+
+service DataService {
+  rpc ListInstruments(InstrumentFilter) returns (InstrumentList);
+  rpc ImportData(ImportRequest) returns (stream ImportProgress);
+  rpc GetDataRange(DataRangeRequest) returns (DataRange);
+}
+
+message InstrumentFilter {
+  string venue = 1;
+  string symbol = 2;
+  string instrument_type = 3;
+}
+
+message InstrumentList {
+  repeated Instrument instruments = 1;
+}
+
+message Instrument {
+  string symbol = 1;
+  string venue = 2;
+  string instrument_type = 3;
+  string base_currency = 4;
+  string quote_currency = 5;
+  double tick_size = 6;
+  double lot_size = 7;
+}
+
+message ImportRequest {
+  string venue = 1;
+  string symbol = 2;
+  string data_type = 3;
+  int64 start_ns = 4;
+  int64 end_ns = 5;
+}
+
+message ImportProgress {
+  double pct_complete = 1;
+  string status = 2;
+  string message = 3;
+  int64 records_imported = 4;
+}
+
+message DataRangeRequest {
+  string venue = 1;
+  string symbol = 2;
+  string data_type = 3;
+}
+
+message DataRange {
+  string venue = 1;
+  string symbol = 2;
+  string data_type = 3;
+  int64 start_ns = 4;
+  int64 end_ns = 5;
+  int64 total_records = 6;
+}

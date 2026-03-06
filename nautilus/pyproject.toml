@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradefox-nautilus"
+version = "0.1.0"
+description = "NautilusTrader gRPC bridge for TradeFox"
+requires-python = ">=3.11"
+dependencies = [
+    "nautilus_trader>=1.210.0",
+    "grpcio>=1.70.0",
+    "grpcio-tools>=1.70.0",
+    "protobuf>=5.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["nautilus*"]

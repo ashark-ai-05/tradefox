@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/ashark-ai-05/tradefox/internal/api"
 	"github.com/ashark-ai-05/tradefox/internal/api/handlers"
+	"github.com/ashark-ai-05/tradefox/internal/eventbus"
+	"github.com/ashark-ai-05/tradefox/internal/nautilus"
 	"github.com/ashark-ai-05/tradefox/internal/persistence"
 	"github.com/ashark-ai-05/tradefox/internal/tui"
 	"github.com/ashark-ai-05/tradefox/web"
@@ -30,6 +33,10 @@ func main() {
 	mockMode := flag.Bool("mock", false, "Force mock data mode (no exchange connection)")
 	webMode := flag.Bool("web", false, "Start web UI instead of terminal UI")
 	webPort := flag.Int("web-port", 8080, "Port for web UI server")
+	nautilusEnabled := flag.Bool("nautilus", false, "Enable NautilusTrader bridge")
+	nautilusPort := flag.Int("nautilus-port", 50051, "NautilusTrader gRPC port")
+	nautilusAddr := flag.String("nautilus-addr", "localhost", "NautilusTrader gRPC address")
+	nautilusNoAutostart := flag.Bool("nautilus-no-autostart", false, "Don't auto-start Nautilus process")
 	flag.Parse()
 
 	// Ensure ~/.tradefox/ directory exists
@@ -52,6 +59,32 @@ func main() {
 	db, err := persistence.NewDB(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not open journal database: %v\n", err)
+	}
+
+	// Nautilus bridge
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	bus := eventbus.NewBus(logger)
+	defer bus.Close()
+
+	var bridge *nautilus.NautilusBridge
+	if *nautilusEnabled {
+		nCfg := nautilus.DefaultConfig()
+		nCfg.Enabled = true
+		nCfg.GRPCPort = *nautilusPort
+		nCfg.GRPCAddress = *nautilusAddr
+		nCfg.AutoStart = !*nautilusNoAutostart
+
+		bridge = nautilus.NewBridge(nCfg, bus, logger)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		if err := bridge.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: nautilus bridge failed to start: %v\n", err)
+		} else {
+			defer bridge.Stop()
+			if bridge.IsConnected() {
+				fmt.Fprintln(os.Stderr, "Nautilus: connected")
+			}
+		}
 	}
 
 	if *webMode {
