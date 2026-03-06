@@ -55,6 +55,7 @@ func main() {
 	nautilusPort := flag.Int("nautilus-port", 50051, "NautilusTrader gRPC port")
 	nautilusAddr := flag.String("nautilus-addr", "localhost", "NautilusTrader gRPC address")
 	nautilusNoAutostart := flag.Bool("nautilus-no-autostart", false, "Don't auto-start Nautilus process")
+	nautilusPython := flag.String("nautilus-python", "python3", "Python binary for Nautilus")
 	flag.Parse()
 
 	// Ensure ~/.tradefox/ directory exists
@@ -91,6 +92,7 @@ func main() {
 		nCfg.GRPCPort = *nautilusPort
 		nCfg.GRPCAddress = *nautilusAddr
 		nCfg.AutoStart = !*nautilusNoAutostart
+		nCfg.PythonPath = *nautilusPython
 
 		bridge = nautilus.NewBridge(nCfg, bus, logger)
 		ctx, cancel := context.WithCancel(context.Background())
