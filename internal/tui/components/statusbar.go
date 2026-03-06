@@ -37,6 +37,11 @@ func NewStatusBar(t theme.Theme) StatusBar {
 	}
 }
 
+// SetSize updates the status bar width.
+func (s *StatusBar) SetSize(w int) {
+	s.Width = w
+}
+
 // View renders the status bar.
 func (s StatusBar) View() string {
 	t := s.Theme

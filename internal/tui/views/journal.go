@@ -38,6 +38,12 @@ func NewJournalView(t theme.Theme) JournalView {
 	}
 }
 
+// SetSize updates the journal view dimensions.
+func (j *JournalView) SetSize(w, h int) {
+	j.Width = w
+	j.Height = h
+}
+
 // View renders the journal view.
 func (j JournalView) View() string {
 	t := j.Theme

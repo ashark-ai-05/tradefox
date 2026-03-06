@@ -95,6 +95,12 @@ func (s *ScannerView) SortBy(col int) {
 	})
 }
 
+// SetSize updates the scanner dimensions.
+func (s *ScannerView) SetSize(w, h int) {
+	s.Width = w
+	s.Height = h
+}
+
 // View renders the scanner table.
 func (s ScannerView) View() string {
 	t := s.Theme

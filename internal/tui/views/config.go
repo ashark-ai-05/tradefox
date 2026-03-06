@@ -49,6 +49,12 @@ func NewConfigView(t theme.Theme) ConfigView {
 }
 
 // View renders the configuration panel.
+// SetSize updates the config view dimensions.
+func (c *ConfigView) SetSize(w, h int) {
+	c.Width = w
+	c.Height = h
+}
+
 func (c ConfigView) View() string {
 	t := c.Theme
 	w := c.Width

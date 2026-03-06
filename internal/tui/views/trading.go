@@ -36,6 +36,27 @@ func NewTradingView(t theme.Theme) TradingView {
 	}
 }
 
+// SetSize updates the trading view dimensions and propagates to sub-components.
+func (tv *TradingView) SetSize(w, h int) {
+	tv.Width = w
+	tv.Height = h
+	topH := h * 60 / 100
+	botH := h - topH
+	liqW := 10
+	orderBookW := w * 25 / 100
+	chartW := w - liqW - orderBookW
+	tv.Chart.SetSize(chartW, topH)
+	tv.Liquidation.SetSize(liqW, topH)
+	tv.OrderBook.SetSize(orderBookW, topH)
+	sigW := w * 40 / 100
+	tradesW := w * 30 / 100
+	posW := w - sigW - tradesW
+	tv.Signals.SetSize(sigW, botH)
+	tv.Trades.SetSize(tradesW, botH)
+	tv.Watchlist.SetSize(w, botH)
+	tv.Positions.SetSize(posW, botH)
+}
+
 // View renders the enhanced trading layout.
 func (tv TradingView) View() string {
 	w := tv.Width

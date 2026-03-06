@@ -41,6 +41,11 @@ func NewHeader(t theme.Theme) Header {
 	}
 }
 
+// SetSize updates the header width.
+func (h *Header) SetSize(w int) {
+	h.Width = w
+}
+
 // View renders the header bar.
 func (h Header) View() string {
 	t := h.Theme

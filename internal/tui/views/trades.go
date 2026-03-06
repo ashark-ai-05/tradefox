@@ -37,6 +37,12 @@ func (tv *TradesView) AddLiveTrade(trade live.TradeEvent) {
 	}
 }
 
+// SetSize updates the trades view dimensions.
+func (tv *TradesView) SetSize(w, h int) {
+	tv.Width = w
+	tv.Height = h
+}
+
 // View renders the recent trades feed.
 func (tv TradesView) View() string {
 	t := tv.Theme

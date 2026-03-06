@@ -107,6 +107,12 @@ func ema(candles []mock.Candle, period int) []float64 {
 	return result
 }
 
+// SetSize updates the chart dimensions.
+func (c *ChartView) SetSize(w, h int) {
+	c.Width = w
+	c.Height = h
+}
+
 // View renders the chart.
 func (c ChartView) View() string {
 	t := c.Theme

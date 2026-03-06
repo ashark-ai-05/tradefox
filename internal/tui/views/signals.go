@@ -26,6 +26,12 @@ func NewSignalsView(t theme.Theme) SignalsView {
 	}
 }
 
+// SetSize updates the signals view dimensions.
+func (sv *SignalsView) SetSize(w, h int) {
+	sv.Width = w
+	sv.Height = h
+}
+
 // View renders the signal dashboard as a 2x4 grid of gauges.
 func (sv SignalsView) View() string {
 	t := sv.Theme

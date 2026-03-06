@@ -24,6 +24,12 @@ func NewPositionsView(t theme.Theme) PositionsView {
 	}
 }
 
+// SetSize updates the positions view dimensions.
+func (p *PositionsView) SetSize(w, h int) {
+	p.Width = w
+	p.Height = h
+}
+
 // View renders the positions panel.
 func (p PositionsView) View() string {
 	t := p.Theme

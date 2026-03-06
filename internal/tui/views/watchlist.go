@@ -65,6 +65,12 @@ func (w WatchlistView) SelectedEntry() mock.WatchlistEntry {
 	return mock.WatchlistEntry{}
 }
 
+// SetSize updates the watchlist dimensions.
+func (wv *WatchlistView) SetSize(width, height int) {
+	wv.Width = width
+	wv.Height = height
+}
+
 // View renders the watchlist table.
 func (w WatchlistView) View() string {
 	t := w.Theme

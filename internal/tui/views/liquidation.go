@@ -34,6 +34,12 @@ func NewLiquidationView(t theme.Theme) LiquidationView {
 	}
 }
 
+// SetSize updates the liquidation view dimensions.
+func (lv *LiquidationView) SetSize(w, h int) {
+	lv.Width = w
+	lv.Height = h
+}
+
 // View renders the liquidation heatmap.
 func (lv LiquidationView) View() string {
 	if !lv.Visible {

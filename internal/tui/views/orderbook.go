@@ -35,6 +35,12 @@ func NewOrderBookView(t theme.Theme) OrderBookView {
 	}
 }
 
+// SetSize updates the order book dimensions.
+func (o *OrderBookView) SetSize(w, h int) {
+	o.Width = w
+	o.Height = h
+}
+
 // View renders the order book depth ladder.
 func (o OrderBookView) View() string {
 	t := o.Theme
