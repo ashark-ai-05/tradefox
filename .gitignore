@@ -1,1 +1,3 @@
 /tradefox
+*.pyc
+__pycache__/
