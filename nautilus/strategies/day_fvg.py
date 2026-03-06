@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.indicators.ema import ExponentialMovingAverage
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data import Bar, BarType, BarSpecification
 from nautilus_trader.model.enums import (
     AggregationSource,
