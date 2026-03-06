@@ -92,6 +92,16 @@ class DayTradeFVG(TradeFoxStrategy):
     def on_bar(self, bar: Bar):
         self._bars_5m.append(bar)
         self._bar_index += 1
+        
+        if self._bar_index % 500 == 0:
+            self.log.info(
+                f"Bar #{self._bar_index}: close={bar.close}, "
+                f"ema_init={self._ema_slow.initialized}, "
+                f"zones={len(self._fvg_zones)}, "
+                f"ema_f={self._ema_fast.value:.2f} ema_m={self._ema_mid.value:.2f} ema_s={self._ema_slow.value:.2f}"
+                if self._ema_slow.initialized else
+                f"Bar #{self._bar_index}: close={bar.close}, ema not initialized yet"
+            )
 
         # Keep last 200 bars
         if len(self._bars_5m) > 200:
