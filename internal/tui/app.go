@@ -334,6 +334,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.listenLiveCmd()
 
 	case TradeUpdateMsg:
+		a.trading.Chart.UpdateFromTrade(msg.Trade.Price, msg.Trade.Size, msg.Trade.Time.UnixMilli())
 		a.trading.Trades.AddLiveTrade(msg.Trade)
 		// Check paper pending orders against trade price
 		if a.paper != nil && a.paper.Active {

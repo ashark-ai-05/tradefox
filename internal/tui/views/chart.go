@@ -31,7 +31,7 @@ type ChartView struct {
 func NewChartView(t theme.Theme) ChartView {
 	cv := ChartView{
 		Symbol:       "BTCUSDT",
-		TimeframeIdx: 3, // 1h default
+		TimeframeIdx: 0, // 1m default (real-time updates)
 		Theme:        t,
 	}
 	cv.LoadCandles()
@@ -415,4 +415,20 @@ func (c ChartView) View() string {
 		Width(w - 2).
 		Height(h).
 		Render(content)
+}
+
+// UpdateFromTrade updates the current candle from a live trade for real-time chart updates.
+func (c *ChartView) UpdateFromTrade(price, volume float64, timestamp int64) {
+	if len(c.Candles) == 0 {
+		return
+	}
+	last := &c.Candles[len(c.Candles)-1]
+	if price > last.High {
+		last.High = price
+	}
+	if price < last.Low {
+		last.Low = price
+	}
+	last.Close = price
+	last.Volume += volume
 }
